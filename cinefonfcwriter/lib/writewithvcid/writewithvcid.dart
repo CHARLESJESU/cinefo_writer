@@ -1,9 +1,10 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
-import 'package:cinefonfcwriter/assets/variables.dart';
 import 'package:flutter/material.dart';
 import 'package:nfc_manager/nfc_manager.dart';
 import 'package:http/http.dart' as http;
+import 'apifunctions.dart';
 
 class WriteVcid extends StatefulWidget {
   const WriteVcid({super.key});
@@ -17,6 +18,7 @@ class _WriteVcidState extends State<WriteVcid> {
   Map? responsedata;
   Map? responsedata1;
   bool isProcessing = false;
+  bool isBuffering = false;
   String? firstresponsedata;
   Future<void> firstapii() async {
     String apiUrl = "https://vcrypt.vframework.in/vcryptapi/smallencrypt";
@@ -119,6 +121,44 @@ class _WriteVcidState extends State<WriteVcid> {
     );
   }
 
+  // Helper: extract UID bytes from various possible tag data shapes and
+  // convert to a decimal string. If shorter than 10 digits it will be left-
+  // padded with zeros. If no UID found, returns 'unknown'.
+  String _decimalUidFromTag(NfcTag tag) {
+    try {
+      final data = tag.data as Map; // cast to Map to avoid redundant 'is' check
+      List<int>? idBytes;
+
+      // Common places where UID bytes may appear in the tag map
+      if (data['id'] is List<int> || data['id'] is Uint8List) {
+        idBytes = List<int>.from(data['id']);
+      } else if (data['nfca'] is Map && data['nfca']['identifier'] != null) {
+        idBytes = List<int>.from(data['nfca']['identifier']);
+      } else if (data['mifareclassic'] is Map && data['mifareclassic']['identifier'] != null) {
+        idBytes = List<int>.from(data['mifareclassic']['identifier']);
+      } else if (data['mifareultralight'] is Map && data['mifareultralight']['identifier'] != null) {
+        idBytes = List<int>.from(data['mifareultralight']['identifier']);
+      } else if (data['android'] is Map && data['android']['id'] != null) {
+        idBytes = List<int>.from(data['android']['id']);
+      } else if (data['identifier'] is List<int>) {
+        idBytes = List<int>.from(data['identifier']);
+      }
+
+      if (idBytes == null || idBytes.isEmpty) return 'unknown';
+
+      // Convert bytes (big-endian) to unsigned integer and then to decimal string
+      int val = 0;
+      for (final b in idBytes) {
+        val = (val << 8) | (b & 0xff);
+      }
+      String dec = val.toString();
+      if (dec.length < 10) dec = dec.padLeft(10, '0');
+      return dec;
+    } catch (_) {
+      return 'unknown';
+    }
+  }
+
   Future<void> writeNfcData(String encryptedData) async {
     if (!await NfcManager.instance.isAvailable()) {
       showError("NFC is not available");
@@ -126,6 +166,10 @@ class _WriteVcidState extends State<WriteVcid> {
     }
 
     NfcManager.instance.startSession(onDiscovered: (NfcTag tag) async {
+      // Extract and print the UID (decimal, padded to 10 digits) immediately
+      final decimalUid = _decimalUidFromTag(tag);
+      print('NFC Tag UID (decimal,10): $decimalUid');
+
       var ndef = Ndef.from(tag);
       if (ndef == null || !ndef.isWritable) {
         showError("NFC tag is not writable");
@@ -138,8 +182,27 @@ class _WriteVcidState extends State<WriteVcid> {
         ]);
         await ndef.write(message);
         NfcManager.instance.stopSession();
+        // The UID has already been printed above; now show the success as a SnackBar
+        // (avoid stacking multiple modal dialogs). Then show buffering dialog.
         showError("NFC Write Successful");
-        showSimplePopUp(context, "NFC Write Successful");
+
+        // Show an in-page buffering overlay while we send the UID to the server.
+        setState(() => isBuffering = true);
+
+        // Send the VCID (from the input) and the NFC tag UID (decimalUid)
+        // to the server. Clear the buffering state when finished and show
+        // the server response or an error message.
+        try {
+          final apiResult = await Apicalls.fetchDataAndWriteVcid(
+              vcidcontroller.text.trim(), decimalUid);
+          setState(() => isBuffering = false);
+          // Show server result if available
+          final serverMsg = apiResult['statusdescription'] ?? apiResult['message'] ?? 'Operation completed';
+          showSimplePopUp(context, serverMsg.toString());
+        } catch (e) {
+          setState(() => isBuffering = false);
+          showError('Server call failed: $e');
+        }
       } catch (e) {
         showError("NFC Write Failed");
         NfcManager.instance.stopSession(errorMessage: "Write Failed");
@@ -180,63 +243,80 @@ class _WriteVcidState extends State<WriteVcid> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text("Write VCID")),
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: MediaQuery.of(context).size.width * 0.8,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey),
-              ),
-              child: TextField(
-                controller: vcidcontroller,
-                decoration: const InputDecoration(
-                  border: InputBorder.none,
-                  hintText: 'Enter VCID here',
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: () {
-                if (vcidcontroller.text.trim().isEmpty) {
-                  showSimplePopUp(context, "Please enter a VCID");
-                  return;
-                }
-                setState(() => isProcessing = true);
-                firstapii();
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                padding:
-                    const EdgeInsets.symmetric(vertical: 15, horizontal: 50),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(30.0),
-                ),
-                elevation: 5,
-              ),
-              child: isProcessing
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2),
-                    )
-                  : const Text(
-                      'Submit',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
+      // Use a Stack so we can show an in-page buffering overlay that blocks
+      // interaction instead of using platform-dependent dialog APIs.
+      body: Stack(
+        children: [
+          // Main scrollable content
+          SingleChildScrollView(
+            // Account for keyboard insets so bottom content isn't hidden
+            padding: EdgeInsets.fromLTRB(0, 24, 0, MediaQuery.of(context).viewInsets.bottom + 24),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: MediaQuery.of(context).size.width * 0.8,
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[200],
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey),
+                    ),
+                    child: TextField(
+                      controller: vcidcontroller,
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        hintText: 'Enter VCID here',
                       ),
                     ),
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton(
+                    onPressed: () {
+                      if (vcidcontroller.text.trim().isEmpty) {
+                        showSimplePopUp(context, "Please enter a VCID");
+                        return;
+                      }
+                      setState(() => isProcessing = true);
+                      firstapii();
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      padding:
+                          const EdgeInsets.symmetric(vertical: 15, horizontal: 50),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30.0),
+                      ),
+                      elevation: 5,
+                    ),
+                    child: isProcessing
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                                color: Colors.white, strokeWidth: 2),
+                          )
+                        : const Text(
+                            'Submit',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                  ),
+                ],
+              ),
             ),
+          ),
+
+          // Buffering overlay
+          if (isBuffering) ...[
+            const ModalBarrier(dismissible: false, color: Color(0x80000000)),
+            const Center(child: CircularProgressIndicator()),
           ],
-        ),
+        ],
       ),
     );
   }
