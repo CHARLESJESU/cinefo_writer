@@ -284,7 +284,7 @@ class _WriteVcidState extends State<WriteVcid> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.blue,
                       padding:
-                          const EdgeInsets.symmetric(vertical: 15, horizontal: 50),
+                      const EdgeInsets.symmetric(vertical: 15, horizontal: 50),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(30.0),
                       ),
@@ -292,19 +292,19 @@ class _WriteVcidState extends State<WriteVcid> {
                     ),
                     child: isProcessing
                         ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                                color: Colors.white, strokeWidth: 2),
-                          )
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2),
+                    )
                         : const Text(
-                            'Submit',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
-                          ),
+                      'Submit',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
                   ),
                 ],
               ),

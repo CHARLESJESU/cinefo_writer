@@ -1,3 +1,4 @@
+import 'package:cinefonfcwriter/erasedata/nfcdataerase.dart';
 import 'package:cinefonfcwriter/readerscreen.dart';
 import 'package:cinefonfcwriter/writerscreen.dart';
 import 'package:cinefonfcwriter/writewithcode/writewithcode.dart';
@@ -136,6 +137,40 @@ class _HomescreenState extends State<Homescreen> {
                     ),
                   ],
                 ),
+                SizedBox(
+                  height: 20,
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => NfcDataEraseScreen(),
+                            ));
+                      },
+                      child: Column(
+                        children: [
+                          Container(
+                            height: 65,
+                            width: 80,
+                            decoration: BoxDecoration(
+                                color: Colors.blue,
+                                borderRadius: BorderRadius.circular(20)),
+                            child: Center(
+                                child: Image.asset(
+                                  'lib/assets/reader.png',
+                                  height: 30,
+                                )),
+                          ),
+                          Text('Erase Tag')
+                        ],
+                      ),
+                    ),
+                  ],
+                )
               ],
             ),
           ),
